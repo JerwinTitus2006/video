@@ -1,0 +1,31 @@
+models:
+  asr: "large-v3"  # Whisper model
+  diarization: "pyannote/speaker-diarization-3.1"  # Speaker diarization
+  
+datasets:
+  ami: true
+  meetingbank: true
+  
+processing:
+  device: "auto"  # auto, cpu, cuda
+  compute_type: "int8"  # int8, int16, float16, float32
+  beam_size: 5
+  vad_filter: true
+  word_timestamps: true
+  
+output_dir: "outputs"
+data_dir: "data"
+temp_dir: "temp"
+
+# Audio processing
+audio:
+  sample_rate: 16000
+  channels: 1
+  format: "wav"
+
+# API settings
+api:
+  max_file_size: 2147483648  # 2GB
+  supported_formats:
+    audio: [".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"]
+    video: [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv"]

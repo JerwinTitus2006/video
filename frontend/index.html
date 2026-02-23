@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting AI - Advanced Transcription & Analysis</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background">
+        <div class="gradient-bg"></div>
+        <div class="particles" id="particles"></div>
+    </div>
+    
+    <header class="header">
+        <div class="container">
+            <div class="logo">
+                <i class="fas fa-microphone-alt"></i>
+                <span>Meeting AI</span>
+            </div>
+            <nav class="nav">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#about" class="nav-link">About</a>
+                <a href="https://github.com/meeting-ai" class="nav-link" target="_blank">
+                    <i class="fab fa-github"></i>
+                </a>
+            </nav>
+        </div>
+    </header>
+    
+    <main class="main">
+        <section class="hero">
+            <div class="container">
+                <div class="hero-content">
+                    <h1 class="hero-title">
+                        Transform Your Meetings Into
+                        <span class="gradient-text">Actionable Insights</span>
+                    </h1>
+                    <p class="hero-description">
+                        Advanced AI-powered transcription with speaker identification, 
+                        meeting summaries, and intelligent action item extraction.
+                    </p>
+                    
+                    <!-- Upload Section -->
+                    <div class="upload-section" id="uploadSection">
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-icon">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                            </div>
+                            <h3>Drop your meeting file here</h3>
+                            <p>Supports audio and video files (MP3, WAV, MP4, MOV, etc.)</p>
+                            <p class="file-limits">Maximum file size: 2GB</p>
+                            
+                            <input type="file" id="fileInput" accept="audio/*,video/*" hidden>
+                            <button class="btn btn-primary" id="selectFileBtn">
+                                <i class="fas fa-folder-open"></i>
+                                Select File
+                            </button>
+                        </div>
+                        
+                        <!-- Upload Options -->
+                        <div class="upload-options" id="uploadOptions" style="display: none;">
+                            <div class="options-grid">
+                                <div class="option-group">
+                                    <label for="languageSelect">Language (Auto-detect)</label>
+                                    <select id="languageSelect">
+                                        <option value="">Auto-detect</option>
+                                        <option value="en">English</option>
+                                        <option value="es">Spanish</option>
+                                        <option value="fr">French</option>
+                                        <option value="de">German</option>
+                                        <option value="it">Italian</option>
+                                        <option value="pt">Portuguese</option>
+                                        <option value="ru">Russian</option>
+                                        <option value="zh">Chinese</option>
+                                        <option value="ja">Japanese</option>
+                                        <option value="ko">Korean</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="option-group">
+                                    <label for="speakersMin">Min Speakers</label>
+                                    <input type="number" id="speakersMin" min="1" max="10" placeholder="Auto">
+                                </div>
+                                
+                                <div class="option-group">
+                                    <label for="speakersMax">Max Speakers</label>
+                                    <input type="number" id="speakersMax" min="1" max="20" placeholder="Auto">
+                                </div>
+                                
+                                <div class="option-group">
+                                    <label for="summaryType">Summary Type</label>
+                                    <select id="summaryType">
+                                        <option value="comprehensive">Comprehensive</option>
+                                        <option value="brief">Brief</option>
+                                        <option value="detailed">Detailed</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="upload-actions">
+                                <button class="btn btn-secondary" id="cancelUpload">Cancel</button>
+                                <button class="btn btn-primary" id="startProcessing">
+                                    <i class="fas fa-play"></i>
+                                    Start Processing
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Processing Section -->
+                    <div class="processing-section" id="processingSection" style="display: none;">
+                        <div class="processing-card">
+                            <div class="processing-header">
+                                <i class="fas fa-cogs processing-icon"></i>
+                                <h3>Processing Your Meeting</h3>
+                                <p id="processingStatus">Uploading file...</p>
+                            </div>
+                            
+                            <div class="progress-container">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill"></div>
+                                </div>
+                                <span class="progress-text" id="progressText">0%</span>
+                            </div>
+                            
+                            <div class="processing-steps">
+                                <div class="step" id="step1">
+                                    <i class="fas fa-upload"></i>
+                                    <span>File Upload</span>
+                                </div>
+                                <div class="step" id="step2">
+                                    <i class="fas fa-volume-up"></i>
+                                    <span>Audio Extraction</span>
+                                </div>
+                                <div class="step" id="step3">
+                                    <i class="fas fa-microphone"></i>
+                                    <span>Transcription</span>
+                                </div>
+                                <div class="step" id="step4">
+                                    <i class="fas fa-users"></i>
+                                    <span>Speaker ID</span>
+                                </div>
+                                <div class="step" id="step5">
+                                    <i class="fas fa-brain"></i>
+                                    <span>AI Summary</span>
+                                </div>
+                            </div>
+                            
+                            <button class="btn btn-secondary" id="cancelProcessing">
+                                <i class="fas fa-times"></i>
+                                Cancel Processing
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Results Section -->
+                    <div class="results-section" id="resultsSection" style="display: none;">
+                        <div class="results-header">
+                            <h2>Meeting Analysis Complete</h2>
+                            <div class="result-actions">
+                                <button class="btn btn-outline" id="downloadJson">
+                                    <i class="fas fa-download"></i>
+                                    JSON
+                                </button>
+                                <button class="btn btn-outline" id="downloadTxt">
+                                    <i class="fas fa-file-alt"></i>
+                                    Report
+                                </button>
+                                <button class="btn btn-outline" id="downloadSrt">
+                                    <i class="fas fa-closed-captioning"></i>
+                                    Subtitles
+                                </button>
+                                <button class="btn btn-primary" id="newAnalysis">
+                                    <i class="fas fa-plus"></i>
+                                    New Analysis
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="results-grid">
+                            <!-- Summary Card -->
+                            <div class="result-card summary-card">
+                                <div class="card-header">
+                                    <i class="fas fa-file-alt"></i>
+                                    <h3>Meeting Summary</h3>
+                                    <button class="copy-btn" id="copySummary">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                                <div class="card-content">
+                                    <p id="summaryText">Loading summary...</p>
+                                </div>
+                            </div>
+                            
+                            <!-- Key Points Card -->
+                            <div class="result-card">
+                                <div class="card-header">
+                                    <i class="fas fa-lightbulb"></i>
+                                    <h3>Key Points</h3>
+                                    <button class="copy-btn" id="copyKeyPoints">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                                <div class="card-content">
+                                    <ul id="keyPointsList">
+                                        <li>Loading key points...</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <!-- Action Items Card -->
+                            <div class="result-card">
+                                <div class="card-header">
+                                    <i class="fas fa-tasks"></i>
+                                    <h3>Action Items</h3>
+                                    <button class="copy-btn" id="copyActionItems">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                                <div class="card-content">
+                                    <ul id="actionItemsList">
+                                        <li>Loading action items...</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <!-- Speakers Card -->
+                            <div class="result-card">
+                                <div class="card-header">
+                                    <i class="fas fa-users"></i>
+                                    <h3>Speakers</h3>
+                                </div>
+                                <div class="card-content">
+                                    <div id="speakersInfo">Loading speaker information...</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Transcript Section -->
+                        <div class="transcript-section">
+                            <div class="transcript-header">
+                                <h3>
+                                    <i class="fas fa-comments"></i>
+                                    Full Transcript
+                                </h3>
+                                <div class="transcript-controls">
+                                    <button class="btn btn-outline" id="copyTranscript">
+                                        <i class="fas fa-copy"></i>
+                                        Copy All
+                                    </button>
+                                    <button class="btn btn-outline" id="searchTranscript">
+                                        <i class="fas fa-search"></i>
+                                        Search
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="search-container" id="searchContainer" style="display: none;">
+                                <input type="text" id="searchInput" placeholder="Search transcript...">
+                                <button id="searchBtn"><i class="fas fa-search"></i></button>
+                                <button id="closeSearch"><i class="fas fa-times"></i></button>
+                            </div>
+                            
+                            <div class="transcript-content" id="transcriptContent">
+                                <div class="loading">Loading transcript...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Features Section -->
+        <section id="features" class="features-section">
+            <div class="container">
+                <h2 class="section-title">Powerful AI Features</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-microphone-alt"></i>
+                        </div>
+                        <h3>Advanced Transcription</h3>
+                        <p>State-of-the-art speech recognition with support for 95+ languages and handling of background noise.</p>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <h3>Speaker Diarization</h3>
+                        <p>Automatically identify and separate different speakers with accurate timestamps and labels.</p>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-brain"></i>  
+                        </div>
+                        <h3>Smart Summarization</h3>
+                        <p>AI-powered meeting summaries with key points, decisions, and action items extraction.</p>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-tasks"></i>
+                        </div>
+                        <h3>Action Item Detection</h3>
+                        <p>Automatically detect and extract action items with assignees and deadlines.</p>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-download"></i>
+                        </div>
+                        <h3>Multiple Export Formats</h3>
+                        <p>Export results as JSON, formatted reports, or SRT subtitle files for easy sharing.</p>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <h3>Privacy First</h3>
+                        <p>Your meetings are processed locally with optional cloud processing for larger files.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+    
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Initializing AI models...</p>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
