@@ -1,0 +1,43 @@
+"""Application configuration via pydantic-settings."""
+
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables / .env file."""
+
+    # Database
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_call_intelligence"
+
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Storage
+    STORAGE_PATH: str = "./storage"
+
+    # AI Models
+    WHISPERX_MODEL: str = "large-v2"
+    SBERT_MODEL: str = "all-MiniLM-L6-v2"
+    SPEAKER_SIMILARITY_THRESHOLD: float = 0.85
+
+    # Security
+    SECRET_KEY: str = "your-secret-key-change-in-production"
+
+    # Email
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+
+    # App
+    APP_NAME: str = "AI Call Intelligence"
+    DEBUG: bool = True
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Cached settings singleton."""
+    return Settings()

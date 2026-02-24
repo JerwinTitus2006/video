@@ -1,0 +1,106 @@
+version: "3.9"
+
+services:
+  # ---- PostgreSQL + pgvector ----
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ai_call_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_call_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---- Redis (Celery broker) ----
+  redis:
+    image: redis:7-alpine
+    container_name: ai_call_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---- FastAPI Backend ----
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_call_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_call_intelligence
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_PATH: /app/storage
+      DEBUG: "true"
+    volumes:
+      - ./app:/app/app            # Hot-reload during development
+      - storage_data:/app/storage  # Persist recordings & reports
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---- Celery Worker ----
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_call_celery_worker
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_call_intelligence
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_PATH: /app/storage
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---- Celery Beat Scheduler ----
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_call_celery_beat
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_call_intelligence
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    driver: local
+  storage_data:
+    driver: local
