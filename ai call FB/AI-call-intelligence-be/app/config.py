@@ -34,7 +34,23 @@ class Settings(BaseSettings):
     APP_NAME: str = "AI Call Intelligence"
     DEBUG: bool = True
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # ── Jitsi Meet Integration ──────────────────────────────────────────────────
+    # Public URL of the Jitsi server (web container). Used to build room URLs.
+    JITSI_DOMAIN: str = "localhost:8000"
+    # Optional JWT app credentials (set ENABLE_AUTH=1 in Jitsi .env to require tokens)
+    JITSI_APP_ID: str = ""
+    JITSI_APP_SECRET: str = ""
+    # Shared secret for Prosody → backend webhook calls (must match WEBHOOK_SECRET
+    # in the Jitsi .env / mod_conference_webhook.lua config)
+    JITSI_WEBHOOK_SECRET: str = ""
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Cached settings singleton."""
+    return Settings()
 
 
 @lru_cache()

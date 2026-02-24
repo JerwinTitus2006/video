@@ -202,3 +202,18 @@ export interface SortOption {
   field: string;
   direction: 'asc' | 'desc';
 }
+// ── Jitsi Meeting Integration ───────────────────────────────────────────────
+
+export interface JitsiRoomInfo {
+  meeting_id: string;
+  jitsi_room_id: string;
+  room_url: string;
+  status: string;
+}
+
+export interface JitsiParticipant {
+  id: string;
+  displayName: string;
+  email?: string;
+  joinedAt: string;
+}

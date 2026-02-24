@@ -99,8 +99,140 @@ services:
       redis:
         condition: service_healthy
 
+  # ══════════════════════════════════════════════════════════════════════════════
+  # ── Jitsi Meet Stack (embedded full video conferencing) ──────────────────────
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  # ── WEB: Nginx + Jitsi Meet SPA ────────────────────────────────────────────
+  jitsi_web:
+    image: jitsi/web:stable
+    container_name: ai_call_jitsi_web
+    restart: unless-stopped
+    ports:
+      - "${JITSI_HTTP_PORT:-8000}:80"
+      - "${JITSI_HTTPS_PORT:-8443}:443"
+    volumes:
+      - jitsi_web_config:/config:Z
+      - jitsi_web_transcripts:/usr/share/jitsi-meet/transcripts:Z
+    environment:
+      - ENABLE_LETSENCRYPT=${ENABLE_LETSENCRYPT:-0}
+      - LETSENCRYPT_DOMAIN=${LETSENCRYPT_DOMAIN:-localhost}
+      - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-admin@localhost}
+      - ENABLE_AUTH=${ENABLE_AUTH:-0}
+      - ENABLE_GUESTS=${ENABLE_GUESTS:-1}
+      - ENABLE_JAAS_COMPONENTS=${ENABLE_JAAS_COMPONENTS:-0}
+      - PUBLIC_URL=${JITSI_PUBLIC_URL:-http://localhost:8000}
+      - TZ=${TZ:-UTC}
+      - XMPP_DOMAIN=${XMPP_DOMAIN:-meet.jitsi}
+      - XMPP_AUTH_DOMAIN=${XMPP_AUTH_DOMAIN:-auth.meet.jitsi}
+      - XMPP_MUC_DOMAIN=${XMPP_MUC_DOMAIN:-muc.meet.jitsi}
+      - XMPP_INTERNAL_MUC_DOMAIN=${XMPP_INTERNAL_MUC_DOMAIN:-internal-muc.meet.jitsi}
+      - XMPP_GUEST_DOMAIN=${XMPP_GUEST_DOMAIN:-guest.meet.jitsi}
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD}
+    networks:
+      - jitsi_net
+
+  # ── PROSODY: XMPP Server ───────────────────────────────────────────────────
+  jitsi_prosody:
+    image: jitsi/prosody:stable
+    container_name: ai_call_jitsi_prosody
+    restart: unless-stopped
+    expose:
+      - "5222"
+      - "5347"
+    volumes:
+      - jitsi_prosody_config:/config:Z
+      - jitsi_prosody_plugins:/prosody-plugins-custom:Z
+    environment:
+      - AUTH_TYPE=internal
+      - ENABLE_AUTH=${ENABLE_AUTH:-0}
+      - ENABLE_GUESTS=${ENABLE_GUESTS:-1}
+      - ENABLE_JAAS_COMPONENTS=${ENABLE_JAAS_COMPONENTS:-0}
+      - XMPP_DOMAIN=${XMPP_DOMAIN:-meet.jitsi}
+      - XMPP_AUTH_DOMAIN=${XMPP_AUTH_DOMAIN:-auth.meet.jitsi}
+      - XMPP_MUC_DOMAIN=${XMPP_MUC_DOMAIN:-muc.meet.jitsi}
+      - XMPP_INTERNAL_MUC_DOMAIN=${XMPP_INTERNAL_MUC_DOMAIN:-internal-muc.meet.jitsi}
+      - XMPP_GUEST_DOMAIN=${XMPP_GUEST_DOMAIN:-guest.meet.jitsi}
+      - XMPP_RECORDER_DOMAIN=${XMPP_RECORDER_DOMAIN:-recorder.meet.jitsi}
+      - XMPP_MUC_MODULES=conference_webhook
+      - CONFERENCE_WEBHOOK_URL=http://backend:8000/api/v1/webhooks/jitsi/event
+      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET}
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD}
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD}
+      - JIBRI_RECORDER_PASSWORD=${JIBRI_RECORDER_PASSWORD}
+      - JIBRI_XMPP_PASSWORD=${JIBRI_XMPP_PASSWORD}
+      - TZ=${TZ:-UTC}
+    networks:
+      - jitsi_net
+
+  # ── JICOFO: Conference Focus ────────────────────────────────────────────────
+  jitsi_jicofo:
+    image: jitsi/jicofo:stable
+    container_name: ai_call_jitsi_jicofo
+    restart: unless-stopped
+    volumes:
+      - jitsi_jicofo_config:/config:Z
+    environment:
+      - AUTH_TYPE=internal
+      - ENABLE_AUTH=${ENABLE_AUTH:-0}
+      - ENABLE_JAAS_COMPONENTS=${ENABLE_JAAS_COMPONENTS:-0}
+      - XMPP_DOMAIN=${XMPP_DOMAIN:-meet.jitsi}
+      - XMPP_AUTH_DOMAIN=${XMPP_AUTH_DOMAIN:-auth.meet.jitsi}
+      - XMPP_INTERNAL_MUC_DOMAIN=${XMPP_INTERNAL_MUC_DOMAIN:-internal-muc.meet.jitsi}
+      - XMPP_MUC_DOMAIN=${XMPP_MUC_DOMAIN:-muc.meet.jitsi}
+      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET}
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD}
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD}
+      - TZ=${TZ:-UTC}
+      - MAX_PARTICIPANTS=${MAX_PARTICIPANTS:-0}
+    depends_on:
+      - jitsi_prosody
+    networks:
+      - jitsi_net
+
+  # ── JVB: Jitsi Video Bridge ─────────────────────────────────────────────────
+  jitsi_jvb:
+    image: jitsi/jvb:stable
+    container_name: ai_call_jitsi_jvb
+    restart: unless-stopped
+    ports:
+      - "${JVB_PORT:-10000}:10000/udp"
+      - "${JVB_TCP_PORT:-4443}:4443"
+    volumes:
+      - jitsi_jvb_config:/config:Z
+    environment:
+      - JVB_ADVERTISE_IPS=${JVB_ADVERTISE_IPS}
+      - XMPP_AUTH_DOMAIN=${XMPP_AUTH_DOMAIN:-auth.meet.jitsi}
+      - XMPP_INTERNAL_MUC_DOMAIN=${XMPP_INTERNAL_MUC_DOMAIN:-internal-muc.meet.jitsi}
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD}
+      - JVB_PORT=${JVB_PORT:-10000}
+      - JVB_TCP_PORT=${JVB_TCP_PORT:-4443}
+      - JVB_TCP_HARVESTER_DISABLED=${JVB_TCP_HARVESTER_DISABLED:-false}
+      - TZ=${TZ:-UTC}
+    depends_on:
+      - jitsi_prosody
+    networks:
+      - jitsi_net
+
+networks:
+  jitsi_net:
+    driver: bridge
+
 volumes:
   pgdata:
     driver: local
   storage_data:
     driver: local
+  jitsi_web_config:
+    driver: local
+  jitsi_web_transcripts:
+    driver: local
+  jitsi_prosody_config:
+    driver: local
+  jitsi_prosody_plugins:
+    driver: local
+  jitsi_jicofo_config:
+    driver: local
+  jitsi_jvb_config:
+    driver: local
+

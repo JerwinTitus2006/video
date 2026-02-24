@@ -81,6 +81,28 @@ export class MeetingService {
     return apiClient.get(`/meetings/${id}/transcript`);
   }
 
+  // ── Jitsi Meeting Integration ────────────────────────────────────────────
+  
+  // Start a Jitsi meeting (returns room URL)
+  static async startJitsiMeeting(id: string) {
+    return apiClient.post(`/meetings/${id}/start`);
+  }
+
+  // Join a Jitsi meeting (returns room URL)
+  static async joinJitsiMeeting(id: string) {
+    return apiClient.post(`/meetings/${id}/join`);
+  }
+
+  // Get Jitsi room info for a meeting
+  static async getJitsiInfo(id: string) {
+    return apiClient.get(`/meetings/${id}/jitsi`);
+  }
+
+  // Quick start a new meeting (creates + starts in one call)
+  static async quickStartMeeting(title: string = 'Quick Meeting') {
+    return apiClient.post('/meetings/quick-start', { title });
+  }
+
   // Upload meeting audio
   static async uploadAudio(id: string, file: File, onProgress?: (progress: number) => void) {
     return apiClient.uploadFile(`/meetings/${id}/upload-audio`, file, onProgress);

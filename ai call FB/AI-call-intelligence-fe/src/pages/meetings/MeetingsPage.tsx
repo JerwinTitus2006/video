@@ -10,11 +10,13 @@ import {
   UsersIcon,
   MagnifyingGlassIcon,
   PlusIcon,
+  RocketLaunchIcon,
 } from '@heroicons/react/24/outline';
 import { Button, Card } from '@/components/ui';
 import { NewMeetingModal } from '@/components/forms';
 import AdvancedTable from '@/components/AdvancedTable';
 import type { TableColumn } from '@/components/AdvancedTable';
+import { MeetingService } from '@/services/meetingService';
 
 interface Meeting {
   id: string;
@@ -106,6 +108,20 @@ const MeetingsPage: React.FC = () => {
   const [selectedMeetings, setSelectedMeetings] = useState<string[]>([]);
   const [meetings, setMeetings] = useState(mockMeetings);
   const [isNewMeetingModalOpen, setIsNewMeetingModalOpen] = useState(false);
+
+  // Quick start a Jitsi meeting (immediate start)
+  const handleQuickStartMeeting = async () => {
+    try {
+      const response = await MeetingService.quickStartMeeting('Quick Meeting');
+      if (response.data) {
+        // Navigate directly to live meeting page
+        navigate(`/meetings/${response.data.meeting_id}/live`);
+      }
+    } catch (error) {
+      console.error('Failed to quick start meeting:', error);
+      alert('Failed to start meeting. Please try again.');
+    }
+  };
 
   const filteredMeetings = useMemo(() => {
     return meetings.filter(meeting => {
@@ -335,10 +351,19 @@ const MeetingsPage: React.FC = () => {
             Manage your recorded meetings, view transcripts, and analyze conversations.
           </p>
         </div>
-        <Button className="shrink-0" onClick={() => setIsNewMeetingModalOpen(true)}>
-          <PlusIcon className="w-4 h-4 mr-2" />
-          New Meeting
-        </Button>
+        <div className="flex gap-3 shrink-0">
+          <Button 
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700" 
+            onClick={handleQuickStartMeeting}
+          >
+            <RocketLaunchIcon className="w-4 h-4 mr-2" />
+            Start Meeting Now
+          </Button>
+          <Button className="shrink-0" onClick={() => setIsNewMeetingModalOpen(true)}>
+            <PlusIcon className="w-4 h-4 mr-2" />
+            Schedule Meeting
+          </Button>
+        </div>
       </div>
 
       {/* Stats Grid */}

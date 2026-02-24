@@ -15,6 +15,7 @@ const EmailVerificationPage = React.lazy(() => import('@/pages/auth/EmailVerific
 const DashboardPage = React.lazy(() => import('@/pages/dashboard/DashboardPage'));
 const MeetingsPage = React.lazy(() => import('@/pages/meetings/MeetingsPage'));
 const MeetingDetailPage = React.lazy(() => import('@/pages/meetings/MeetingDetailPage'));
+const LiveMeetingPage = React.lazy(() => import('@/pages/meetings/LiveMeetingPage'));
 const PersonsPage = React.lazy(() => import('@/pages/persons/PersonsPage'));
 const PersonDetailPage = React.lazy(() => import('@/pages/persons/PersonDetailPage'));
 const PainPointsPage = React.lazy(() => import('@/pages/pain-points/PainPointsPage'));
@@ -162,6 +163,7 @@ const App: React.FC = () => {
                 {/* Meetings */}
                 <Route path="meetings" element={<MeetingsPage />} />
                 <Route path="meetings/:id" element={<MeetingDetailPage />} />
+                <Route path="meetings/:id/live" element={<LiveMeetingPage />} />
                 
                 {/* People */}
                 <Route path="persons" element={<PersonsPage />} />
