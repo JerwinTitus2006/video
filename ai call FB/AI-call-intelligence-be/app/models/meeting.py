@@ -30,7 +30,7 @@ class Meeting(Base):
     audio_path = Column(Text, nullable=True)
     transcript = Column(Text, nullable=True)
     status = Column(
-        Enum("pending", "processing", "completed", "failed", name="meeting_status"),
+        Enum("scheduled", "pending", "processing", "completed", "failed", name="meeting_status"),
         default="pending",
         nullable=False,
     )

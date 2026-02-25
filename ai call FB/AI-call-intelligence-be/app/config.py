@@ -7,8 +7,13 @@ from functools import lru_cache
 class Settings(BaseSettings):
     """Application settings loaded from environment variables / .env file."""
 
-    # Database
+    # Database (Supabase PostgreSQL)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_call_intelligence"
+
+    # Supabase
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
+    SUPABASE_SERVICE_KEY: str = ""
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -16,7 +21,12 @@ class Settings(BaseSettings):
     # Storage
     STORAGE_PATH: str = "./storage"
 
-    # AI Models
+    # AI APIs
+    OPENAI_API_KEY: str = ""
+    DEEPGRAM_API_KEY: str = ""
+    SARVAM_API_KEY: str = ""
+
+    # AI Models (fallback for local models)
     WHISPERX_MODEL: str = "large-v2"
     SBERT_MODEL: str = "all-MiniLM-L6-v2"
     SPEAKER_SIMILARITY_THRESHOLD: float = 0.85
@@ -36,7 +46,7 @@ class Settings(BaseSettings):
 
     # ── Jitsi Meet Integration ──────────────────────────────────────────────────
     # Public URL of the Jitsi server (web container). Used to build room URLs.
-    JITSI_DOMAIN: str = "localhost:8000"
+    JITSI_DOMAIN: str = "meet.jitsi"
     # Optional JWT app credentials (set ENABLE_AUTH=1 in Jitsi .env to require tokens)
     JITSI_APP_ID: str = ""
     JITSI_APP_SECRET: str = ""
@@ -45,12 +55,6 @@ class Settings(BaseSettings):
     JITSI_WEBHOOK_SECRET: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
-
-
-@lru_cache()
-def get_settings() -> Settings:
-    """Cached settings singleton."""
-    return Settings()
 
 
 @lru_cache()

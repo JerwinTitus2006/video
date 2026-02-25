@@ -39,3 +39,4 @@ class PainPoint(Base):
     person = relationship("Person", back_populates="pain_points")
     matches = relationship("ResourceMatch", back_populates="pain_point", cascade="all, delete-orphan")
     action_items = relationship("ActionItem", back_populates="pain_point")
+    solutions = relationship("Solution", back_populates="pain_point", cascade="all, delete-orphan")

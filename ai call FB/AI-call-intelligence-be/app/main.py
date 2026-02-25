@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import os
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,24 +10,48 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import create_tables
 
+# Import all models to register them with SQLAlchemy
+from app.models import (
+    Meeting, Person, PainPoint, ActionItem, SentimentSegment,
+    Resource, ResourceMatch, Report, Solution, MeetingSummary,
+    LiveTranscriptSegment
+)
+
 settings = get_settings()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO if settings.DEBUG else logging.WARNING,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown events."""
     # Startup
+    logger.info("Starting AI Call Intelligence API...")
+    
     os.makedirs(settings.STORAGE_PATH, exist_ok=True)
     os.makedirs(os.path.join(settings.STORAGE_PATH, "recordings"), exist_ok=True)
     os.makedirs(os.path.join(settings.STORAGE_PATH, "reports"), exist_ok=True)
 
     # Auto-create tables in development (use Alembic in prod)
     if settings.DEBUG:
-        await create_tables()
+        logger.info("Creating database tables...")
+        try:
+            await create_tables()
+            logger.info("Database tables created successfully!")
+        except Exception as e:
+            logger.error(f"Failed to create tables: {e}")
+            raise
 
+    logger.info("AI Call Intelligence API started!")
     yield
 
     # Shutdown
+    logger.info("Shutting down AI Call Intelligence API...")
     pass
 
 
@@ -63,6 +88,8 @@ from app.routers import (
     analytics,
     search,
     ws,
+    solutions,
+    summaries,
 )
 
 # Webhook
@@ -76,6 +103,8 @@ app.include_router(resources.router, prefix="/api/v1")
 app.include_router(action_items.router, prefix="/api/v1")
 app.include_router(sentiment.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
+app.include_router(solutions.router, prefix="/api/v1")
+app.include_router(summaries.router, prefix="/api/v1")
 
 # AI Processing
 app.include_router(ai.router, prefix="/api/v1")

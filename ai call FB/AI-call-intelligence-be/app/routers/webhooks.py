@@ -14,6 +14,7 @@ Handles two classes of incoming webhooks:
 
 import hashlib
 import hmac
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -30,7 +31,7 @@ from app.database import get_db
 from app.models.meeting import Meeting
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
-
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -63,61 +64,170 @@ class JitsiRecordingWebhook(BaseModel):
 
 
 async def _process_recording(meeting_id: str, audio_path: str):
-    """Full async pipeline: transcribe → identify → extract → match → sentiment."""
-    from app.services.whisperx_service import process_transcript
-    from app.services.speaker_service import identify_speakers_in_meeting
-    from app.services.painpoint_service import extract_pain_points
-    from app.services.sentiment_service import analyze_meeting_sentiment
-    from app.services.resource_service import match_resources_for_meeting
-    from app.services.action_service import generate_actions_for_meeting
+    """
+    Full async pipeline using AI APIs:
+    1. Transcribe audio with speaker diarization (Deepgram/OpenAI)
+    2. Extract pain points (OpenAI GPT)
+    3. Analyze sentiment (OpenAI GPT)
+    4. Generate solutions for pain points (OpenAI GPT)
+    5. Generate action items (OpenAI GPT)
+    6. Generate meeting summary (OpenAI GPT)
+    7. Upload recording to Supabase Storage
+    """
+    from app.services.ai_api_service import ai_service
+    from app.services.supabase_storage import storage_service
+    from app.models.pain_point import PainPoint
+    from app.models.action_item import ActionItem
+    from app.models.sentiment import SentimentSegment
+    from app.models.solution import Solution
+    from app.models.meeting_summary import MeetingSummary
     from app.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
         try:
             meeting = (await db.execute(
-                __import__("sqlalchemy", fromlist=["select"]).select(Meeting).where(Meeting.id == uuid.UUID(meeting_id))
+                select(Meeting).where(Meeting.id == uuid.UUID(meeting_id))
             )).scalar_one()
 
             meeting.status = "processing"
             await db.commit()
 
-            # Step 1: Transcribe with WhisperX
-            transcript_result = await process_transcript(audio_path)
-
-            meeting.transcript = transcript_result.get("full_text", "")
+            # Step 1: Transcribe with AI API (Deepgram/OpenAI)
+            logger.info(f"[{meeting_id}] Starting transcription...")
+            transcript_result = await ai_service.transcribe_audio(audio_path)
+            
+            full_text = transcript_result.get("full_text", "")
+            segments = transcript_result.get("segments", [])
+            
+            meeting.transcript = full_text
             await db.commit()
+            logger.info(f"[{meeting_id}] Transcription complete: {len(segments)} segments")
 
-            # Step 2: Identify speakers
-            await identify_speakers_in_meeting(
-                meeting_id=meeting_id,
-                segments=transcript_result.get("segments", []),
-                db=db,
+            # Step 2: Extract pain points using GPT
+            logger.info(f"[{meeting_id}] Extracting pain points...")
+            pain_points_data = await ai_service.extract_pain_points(full_text, segments)
+            
+            pain_point_ids = []
+            for pp in pain_points_data:
+                pain_point = PainPoint(
+                    meeting_id=uuid.UUID(meeting_id),
+                    text=pp.get("text", ""),
+                    label=pp.get("label", "PROBLEM"),
+                    status="open",
+                )
+                db.add(pain_point)
+                await db.flush()
+                pain_point_ids.append(pain_point.id)
+            
+            await db.commit()
+            logger.info(f"[{meeting_id}] Extracted {len(pain_points_data)} pain points")
+
+            # Step 3: Analyze sentiment using GPT
+            logger.info(f"[{meeting_id}] Analyzing sentiment...")
+            sentiment_result = await ai_service.analyze_sentiment(full_text, segments)
+            
+            for seg in sentiment_result.get("segments", []):
+                sentiment_segment = SentimentSegment(
+                    meeting_id=uuid.UUID(meeting_id),
+                    text=seg.get("text", ""),
+                    score=seg.get("score", 0.0),
+                )
+                db.add(sentiment_segment)
+            
+            await db.commit()
+            logger.info(f"[{meeting_id}] Sentiment analysis complete")
+
+            # Step 4: Generate solutions for pain points
+            logger.info(f"[{meeting_id}] Generating solutions...")
+            solutions_data = await ai_service.generate_solutions(pain_points_data, full_text)
+            
+            for sol_group in solutions_data:
+                pain_text = sol_group.get("pain_point_text", "")
+                for sol in sol_group.get("solutions", []):
+                    # Find matching pain point
+                    matching_pp = None
+                    for pp_id, pp_data in zip(pain_point_ids, pain_points_data):
+                        if pp_data.get("text", "") == pain_text or pain_text in pp_data.get("text", ""):
+                            matching_pp = pp_id
+                            break
+                    
+                    if matching_pp:
+                        solution = Solution(
+                            pain_point_id=matching_pp,
+                            meeting_id=uuid.UUID(meeting_id),
+                            title=sol.get("title", ""),
+                            description=sol.get("description", ""),
+                            priority=sol.get("priority", "medium"),
+                            effort=sol.get("effort", "medium"),
+                            expected_outcome=sol.get("expected_outcome", ""),
+                        )
+                        db.add(solution)
+            
+            await db.commit()
+            logger.info(f"[{meeting_id}] Solutions generated")
+
+            # Step 5: Generate action items
+            logger.info(f"[{meeting_id}] Generating action items...")
+            actions_data = await ai_service.generate_action_items(full_text, pain_points_data)
+            
+            for action in actions_data:
+                action_item = ActionItem(
+                    meeting_id=uuid.UUID(meeting_id),
+                    description=action.get("description", ""),
+                    owner=action.get("owner", "TBD"),
+                    status="pending",
+                )
+                # Parse due date if provided
+                due_date_str = action.get("due_date", "")
+                if due_date_str:
+                    try:
+                        from datetime import date
+                        action_item.due_date = date.fromisoformat(due_date_str)
+                    except ValueError:
+                        pass
+                
+                db.add(action_item)
+            
+            await db.commit()
+            logger.info(f"[{meeting_id}] Generated {len(actions_data)} action items")
+
+            # Step 6: Generate meeting summary
+            logger.info(f"[{meeting_id}] Generating meeting summary...")
+            summary_data = await ai_service.generate_meeting_summary(
+                full_text, pain_points_data, actions_data, sentiment_result
             )
-
-            # Step 3: Extract pain points
-            await extract_pain_points(
-                meeting_id=meeting_id,
-                segments=transcript_result.get("segments", []),
-                db=db,
+            
+            meeting_summary = MeetingSummary(
+                meeting_id=uuid.UUID(meeting_id),
+                title=summary_data.get("title"),
+                executive_summary=summary_data.get("executive_summary"),
+                key_points=summary_data.get("key_points", []),
+                decisions_made=summary_data.get("decisions_made", []),
+                topics_discussed=summary_data.get("topics_discussed", []),
+                next_steps=summary_data.get("next_steps", []),
+                participants_summary=summary_data.get("participants_summary", {}),
             )
+            db.add(meeting_summary)
+            await db.commit()
+            logger.info(f"[{meeting_id}] Meeting summary generated")
 
-            # Step 4: Analyze sentiment
-            await analyze_meeting_sentiment(
-                meeting_id=meeting_id,
-                segments=transcript_result.get("segments", []),
-                db=db,
-            )
+            # Step 7: Upload recording to Supabase Storage
+            logger.info(f"[{meeting_id}] Uploading recording to Supabase...")
+            try:
+                recording_url = await storage_service.upload_recording(meeting_id, audio_path)
+                if recording_url:
+                    meeting.recording_url = recording_url
+                    logger.info(f"[{meeting_id}] Recording uploaded: {recording_url}")
+            except Exception as e:
+                logger.warning(f"[{meeting_id}] Failed to upload recording: {e}")
 
-            # Step 5: Match resources
-            await match_resources_for_meeting(meeting_id=meeting_id, db=db)
-
-            # Step 6: Generate action items
-            await generate_actions_for_meeting(meeting_id=meeting_id, db=db)
-
+            # Mark as completed
             meeting.status = "completed"
             await db.commit()
+            logger.info(f"[{meeting_id}] Processing complete!")
 
         except Exception as e:
+            logger.error(f"[{meeting_id}] Processing failed: {e}")
             meeting.status = "failed"
             await db.commit()
             raise e
