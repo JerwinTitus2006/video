@@ -72,16 +72,29 @@ class TranscriptionEngine:
         """Load enhanced Whisper model with optimized settings"""
         try:
             logger.info(f"Loading enhanced Whisper {self.model_size} model...")
+            logger.info(f"Model cache directory: {self.model_dir}")
             
-            # Enhanced model loading with better error handling
-            self.model = WhisperModel(
-                self.model_size,
-                device=self.device,
-                compute_type=self.compute_type,
-                download_root=str(self.model_dir),
-                local_files_only=False,
-                num_workers=1  # Optimize for stability
-            )
+            # Try loading from local cache first
+            try:
+                self.model = WhisperModel(
+                    self.model_size,
+                    device=self.device,
+                    compute_type=self.compute_type,
+                    download_root=str(self.model_dir),
+                    local_files_only=True,
+                    num_workers=1
+                )
+                logger.info("Model loaded from local cache")
+            except Exception as cache_error:
+                logger.info(f"Model not in cache, downloading... ({cache_error})")
+                self.model = WhisperModel(
+                    self.model_size,
+                    device=self.device,
+                    compute_type=self.compute_type,
+                    download_root=str(self.model_dir),
+                    local_files_only=False,
+                    num_workers=1
+                )
             
             logger.info(f"Enhanced Whisper model loaded successfully on {self.device}")
             logger.info(f"Model info - Size: {self.model_size}, Device: {self.device}, Compute: {self.compute_type}")

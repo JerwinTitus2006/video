@@ -215,10 +215,18 @@ class ConfigManager:
     
     @staticmethod
     def get_model_cache_dir() -> Path:
-        """Get model cache directory"""
-        cache_dir = Path("models")
+        """Get model cache directory - uses absolute path for consistent caching"""
+        # Use absolute path relative to the video directory
+        cache_dir = Path(__file__).parent.parent / "models"
         cache_dir.mkdir(exist_ok=True)
-        return cache_dir
+        
+        # Set HuggingFace environment variables to use local cache
+        cache_str = str(cache_dir.resolve())
+        os.environ["HF_HOME"] = cache_str
+        os.environ["HF_HUB_CACHE"] = cache_str
+        os.environ["HUGGINGFACE_HUB_CACHE"] = cache_str
+        
+        return cache_dir.resolve()
     
     @staticmethod
     def get_output_dir() -> Path:
