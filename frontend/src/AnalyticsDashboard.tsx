@@ -9,7 +9,7 @@ interface Props {
 export default function AnalyticsDashboard({ onBack, onViewMeeting }: Props) {
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'live' | 'ended'>('all');
+  const [filter, setFilter] = useState<'all' | 'live' | 'ended' | 'waiting'>('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -73,13 +73,13 @@ export default function AnalyticsDashboard({ onBack, onViewMeeting }: Props) {
 
       {/* ── Filter ── */}
       <div className="dash-filter-row">
-        {(['all', 'live', 'ended'] as const).map(f => (
+        {(['all', 'live', 'ended', 'waiting'] as const).map(f => (
           <button
             key={f}
             className={`summary-tab${filter === f ? ' active' : ''}`}
             onClick={() => { setFilter(f); setLoading(true); }}
           >
-            {f === 'all' ? 'All' : f === 'live' ? '🟢 Live' : '🏁 Ended'}
+            {f === 'all' ? 'All' : f === 'live' ? '🟢 Live' : f === 'ended' ? '🏁 Ended' : '⏳ Waiting'}
           </button>
         ))}
       </div>
@@ -102,7 +102,10 @@ export default function AnalyticsDashboard({ onBack, onViewMeeting }: Props) {
             >
               <div className="mrc-left">
                 <span className={`mrc-status ${m.status}`}>
-                  {m.status === 'live' ? '🟢 Live' : '🏁 Ended'}
+                  {m.status === 'live' ? '🟢 Live'
+                    : m.status === 'waiting' ? '⏳ Waiting'
+                    : m.status === 'scheduled' ? '📅 Scheduled'
+                    : '🏁 Ended'}
                 </span>
                 <div>
                   <p className="mrc-title">{m.title || m.room_code}</p>

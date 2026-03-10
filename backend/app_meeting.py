@@ -38,7 +38,7 @@ from database.database import init_db, async_session_maker
 from database.models import (
     Meeting, Transcript, PainPoint, ActionItem, SentimentAnalysis,
 )
-from sqlalchemy import select
+from sqlalchemy import select, func
 from services.sarvam_ai import sarvam_service
 from services.ai_processor import ai_processor, check_for_pain_points_realtime
 
@@ -294,7 +294,8 @@ async def deny_participant(room_id: str, sid: str):
 @app.get("/api/meetings")
 async def list_meetings(status: Optional[str] = None, limit: int = 50):
     async with async_session_maker() as db:
-        q = select(Meeting).order_by(Meeting.started_at.desc()).limit(limit)
+        order_col = func.coalesce(Meeting.started_at, Meeting.ended_at).desc()
+        q = select(Meeting).order_by(order_col).limit(limit)
         if status:
             q = q.where(Meeting.status == status)
         result = await db.execute(q)
@@ -1237,6 +1238,23 @@ async def startup():
             if stale:
                 await db.commit()
                 logger.info("🧹 Cleaned up %d stale meetings", len(stale))
+
+            # Fix historical ended meetings with 0 duration
+            result2 = await db.execute(
+                select(Meeting).where(
+                    Meeting.status == "ended",
+                    Meeting.started_at.isnot(None),
+                    Meeting.ended_at.isnot(None),
+                    Meeting.duration_minutes == 0,
+                )
+            )
+            zero_dur = result2.scalars().all()
+            for m in zero_dur:
+                dur = (m.ended_at - m.started_at).total_seconds() / 60
+                m.duration_minutes = max(1, round(dur))
+            if zero_dur:
+                await db.commit()
+                logger.info("🔧 Fixed %d meetings with 0 duration", len(zero_dur))
         except Exception as exc:
             logger.error("Stale meeting cleanup error: %s", exc)
 
