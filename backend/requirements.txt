@@ -1,17 +1,28 @@
-# AI Meet - Video Conferencing Backend
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-socketio==5.11.0
-aiofiles==23.2.0
-python-multipart==0.0.6
+# AI Meet – Call Intelligence Platform
+# ────────────────────────────────────
 
-# Optional: for transcription features (original app)
-# faster-whisper==0.10.0
-# pyannote.audio==3.1.1
-# transformers==4.35.2
-# torch==2.1.0
-# torchaudio==2.1.0
-# ffmpeg-python==0.2.0
+# Core
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-socketio==5.11.0
+python-multipart==0.0.6
+aiofiles==23.2.1
+python-dotenv==1.0.0
+pydantic==2.5.3
+
+# Database (SQLite – local, no external DB required)
+sqlalchemy==2.0.23
+aiosqlite==0.19.0
+
+# HTTP client (Sarvam AI calls)
+httpx==0.26.0
+
+# AI / NLP  (optional – the server degrades gracefully without these)
+# Uncomment if you want full AI features:
+# spacy==3.7.2
+# transformers==4.37.0
+# torch==2.1.2
+# scikit-learn==1.4.0
 # pydub==0.25.1
 # datasets==2.14.6
 # huggingface_hub==0.19.4
