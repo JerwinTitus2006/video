@@ -446,12 +446,13 @@ async def get_sentiment(meeting_id: str):
 
 @app.post("/api/meetings/{meeting_id}/recording")
 async def upload_recording(meeting_id: str, file: UploadFile = File(...)):
-    """Upload a meeting recording (webm/mp4). Stored in MongoDB GridFS."""
+    """Upload a meeting recording (webm/mp4). Stored in MongoDB GridFS or disk."""
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "webm"
     filename = f"{meeting_id}.{ext}"
     content_type = file.content_type or ("video/webm" if ext == "webm" else "video/mp4")
 
     contents = await file.read()
+    logger.info("📼 Receiving recording upload: %s (%d KB)", filename, len(contents) // 1024)
 
     # Look up room_code from the in-memory rooms or DB
     room_code = ""
@@ -469,36 +470,51 @@ async def upload_recording(meeting_id: str, file: UploadFile = File(...)):
         content_type=content_type,
     )
 
+    # Always save to disk as well for reliability
+    filepath = RECORDINGS_DIR / filename
+    with open(filepath, "wb") as f:
+        f.write(contents)
+    
     if not file_id:
-        # Fallback: save to disk if MongoDB fails
-        filepath = RECORDINGS_DIR / filename
-        with open(filepath, "wb") as f:
-            f.write(contents)
-        logger.warning("MongoDB save failed – saved to disk: %s", filename)
+        logger.warning("MongoDB save failed – using disk fallback: %s", filename)
+    else:
+        logger.info("Recording saved to MongoDB and disk: %s", filename)
 
-    # Also update SQLite so the has_recording flag works
+    # Update SQLite so the has_recording flag works
     async with async_session_maker() as db:
         try:
             meeting = await db.get(Meeting, meeting_id)
             if meeting:
                 meeting.recording_filename = filename
                 await db.commit()
+                logger.info("✅ Recording linked to meeting %s in database", meeting_id)
+            else:
+                logger.error("❌ Meeting %s not found in database!", meeting_id)
+                raise HTTPException(status_code=404, detail="Meeting not found")
+        except HTTPException:
+            raise
         except Exception as exc:
             logger.error("DB recording save error: %s", exc)
+            await db.rollback()
+            raise HTTPException(status_code=500, detail="Failed to save recording metadata")
 
-    logger.info("📼 Recording saved to MongoDB: %s (%d KB)", filename, len(contents) // 1024)
+    logger.info("📼 Recording saved successfully: %s (%d KB)", filename, len(contents) // 1024)
     return {"status": "ok", "filename": filename, "size": len(contents), "mongo_file_id": file_id}
 
 
+@app.head("/api/meetings/{meeting_id}/recording")
 @app.get("/api/meetings/{meeting_id}/recording")
 async def download_recording(meeting_id: str):
-    """Download / stream a meeting recording from MongoDB GridFS."""
+    """Download / stream a meeting recording from MongoDB GridFS or disk."""
     from fastapi.responses import Response
     from fastapi import HTTPException
+
+    logger.info("📥 Recording download requested for meeting: %s", meeting_id)
 
     # Try MongoDB first
     rec = await get_recording(meeting_id)
     if rec:
+        logger.info("✅ Serving recording from MongoDB: %s", rec["filename"])
         return Response(
             content=rec["data"],
             media_type=rec["content_type"],
@@ -510,13 +526,20 @@ async def download_recording(meeting_id: str):
         )
 
     # Fallback: check disk
+    logger.info("MongoDB not available, checking disk for meeting: %s", meeting_id)
     async with async_session_maker() as db:
         meeting = await db.get(Meeting, meeting_id)
-        if not meeting or not meeting.recording_filename:
+        if not meeting:
+            logger.error("❌ Meeting %s not found in database", meeting_id)
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        if not meeting.recording_filename:
+            logger.error("❌ Meeting %s has no recording_filename", meeting_id)
             raise HTTPException(status_code=404, detail="No recording available")
         filepath = RECORDINGS_DIR / meeting.recording_filename
         if not filepath.exists():
+            logger.error("❌ Recording file not found on disk: %s", filepath)
             raise HTTPException(status_code=404, detail="Recording file not found")
+        logger.info("✅ Serving recording from disk: %s", filepath)
         media_type = "video/webm" if meeting.recording_filename.endswith(".webm") else "video/mp4"
         return FileResponse(
             str(filepath),

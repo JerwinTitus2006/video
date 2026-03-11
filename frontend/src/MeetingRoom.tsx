@@ -222,6 +222,7 @@ export default function MeetingRoom({
   const startRecordingNow = useCallback(() => {
     if (recorder.current) return; // already recording
     const ls = localStream.current;
+    console.log('🎬 Starting recording. Meeting ID:', meetingIdRef.current);
     if (!ls) { console.warn('No local stream for recording'); return; }
 
     try {
@@ -263,22 +264,28 @@ export default function MeetingRoom({
       rec.onstop = async () => {
         const blob = new Blob(chunks.current, { type: recordingMimeRef.current });
         const mid = meetingIdRef.current;
+        console.log('🎬 Recording stopped. Meeting ID:', mid, 'Blob size:', blob.size);
         if (mid && blob.size > 0) {
           try {
             const formData = new FormData();
             formData.append('file', blob, `meeting-${roomId}.webm`);
+            console.log('📤 Uploading recording to /api/meetings/' + mid + '/recording');
             const res = await fetch(`/api/meetings/${mid}/recording`, {
               method: 'POST',
               body: formData,
             });
             if (res.ok) {
-              console.log('✅ Recording uploaded to server');
+              const data = await res.json();
+              console.log('✅ Recording uploaded to server:', data);
             } else {
-              console.error('Upload failed:', res.status);
+              const errorText = await res.text();
+              console.error('❌ Upload failed:', res.status, errorText);
             }
           } catch (err) {
-            console.error('Failed to upload recording:', err);
+            console.error('❌ Failed to upload recording:', err);
           }
+        } else {
+          console.warn('⚠️ Cannot upload: meetingId=', mid, 'blobSize=', blob.size);
         }
       };
       rec.start(1000);
@@ -331,6 +338,9 @@ export default function MeetingRoom({
       if (mid) {
         setCurrentMeetingId(mid);
         meetingIdRef.current = mid;
+        console.log('✅ Meeting ID set:', mid);
+      } else {
+        console.warn('⚠️ No meeting ID received in room_joined event!');
       }
       if (hostFlag) setAmHost(true);
       for (const [sid, info] of Object.entries<any>(existing)) {
