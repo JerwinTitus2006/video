@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   getMeeting, getTranscripts, getPainPoints, getActionItems, getSentiment,
   type MeetingSummary as MeetingData, type TranscriptLine,
@@ -23,6 +23,86 @@ const PRIORITY_COLORS: Record<string, string> = {
   medium: '#fbbc04',
   low: '#34a853',
 };
+
+/* ── Recording player with availability check ── */
+function RecordingPlayer({ meetingId }: { meetingId: string }) {
+  const [status, setStatus] = useState<'loading' | 'available' | 'unavailable'>('loading');
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/meetings/${meetingId}/recording`, { method: 'HEAD' });
+        if (cancelled) return;
+        if (res.ok) {
+          // Recording exists – fetch it as blob for reliable playback
+          const dataRes = await fetch(`/api/meetings/${meetingId}/recording`);
+          if (cancelled) return;
+          if (dataRes.ok) {
+            const blob = await dataRes.blob();
+            if (cancelled) return;
+            const url = URL.createObjectURL(blob);
+            setBlobUrl(url);
+            setStatus('available');
+          } else {
+            setStatus('unavailable');
+          }
+        } else {
+          setStatus('unavailable');
+        }
+      } catch {
+        if (!cancelled) setStatus('unavailable');
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [meetingId]);
+
+  if (status === 'loading') {
+    return (
+      <div className="recording-view" style={{ textAlign: 'center', padding: '40px' }}>
+        <span className="ai-spinner" />
+        <p>Loading recording…</p>
+      </div>
+    );
+  }
+
+  if (status === 'unavailable') {
+    return (
+      <div className="recording-view" style={{ textAlign: 'center', padding: '40px' }}>
+        <p style={{ fontSize: '3rem', marginBottom: '12px' }}>🎬</p>
+        <p style={{ color: '#5f6368' }}>No recording available for this meeting.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="recording-view">
+      <video
+        ref={videoRef}
+        controls
+        style={{ width: '100%', maxHeight: '500px', borderRadius: '8px', background: '#000' }}
+        src={blobUrl || undefined}
+      >
+        Your browser does not support video playback.
+      </video>
+      <div style={{ marginTop: '12px', display: 'flex', gap: '12px' }}>
+        <a
+          href={`/api/meetings/${meetingId}/recording`}
+          download={`meeting-${meetingId}.webm`}
+          className="mrc-view-btn"
+          style={{ textDecoration: 'none', display: 'inline-block' }}
+        >
+          ⬇️ Download Recording
+        </a>
+      </div>
+    </div>
+  );
+}
 
 export default function MeetingSummary({ meetingId, onBack }: Props) {
   const [meeting, setMeeting] = useState<MeetingData | null>(null);
@@ -155,25 +235,7 @@ export default function MeetingSummary({ meetingId, onBack }: Props) {
 
         {/* RECORDING */}
         {tab === 'recording' && (
-          <div className="recording-view">
-            <video
-              controls
-              style={{ width: '100%', maxHeight: '500px', borderRadius: '8px', background: '#000' }}
-              src={`/api/meetings/${meetingId}/recording`}
-            >
-              Your browser does not support video playback.
-            </video>
-            <div style={{ marginTop: '12px', display: 'flex', gap: '12px' }}>
-              <a
-                href={`/api/meetings/${meetingId}/recording`}
-                download
-                className="mrc-view-btn"
-                style={{ textDecoration: 'none', display: 'inline-block' }}
-              >
-                ⬇️ Download Recording
-              </a>
-            </div>
-          </div>
+          <RecordingPlayer meetingId={meetingId} />
         )}
 
         {/* TRANSCRIPT */}

@@ -17,6 +17,11 @@ aiosqlite==0.19.0
 # HTTP client (Sarvam AI calls)
 httpx==0.26.0
 
+# MongoDB (async driver + GridFS for recordings)
+motor==3.3.2
+pymongo[srv]==4.6.1
+dnspython==2.5.0
+
 # AI / NLP  (optional – the server degrades gracefully without these)
 # Uncomment if you want full AI features:
 # spacy==3.7.2

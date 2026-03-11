@@ -50,6 +50,7 @@ interface Props {
   initialAudioEnabled: boolean;
   initialVideoEnabled: boolean;
   initialStream: MediaStream | null;
+  skipJoin?: boolean;
   onLeave: (meetingId?: string | null) => void;
 }
 
@@ -111,6 +112,7 @@ export default function MeetingRoom({
   socket, roomId, userName, meetingId,
   isHost = false,
   initialAudioEnabled, initialVideoEnabled, initialStream,
+  skipJoin = false,
   onLeave,
 }: Props) {
   /* ---- state ---------------------------------------------------- */
@@ -160,6 +162,8 @@ export default function MeetingRoom({
   const chatEnd = useRef<HTMLDivElement>(null);
   const t0 = useRef(Date.now());
   const joinedRef = useRef(false);
+  const meetingIdRef = useRef<string | null>(meetingId ?? null);
+  const recordingMimeRef = useRef<string>('video/webm');
 
   /* ---- helpers -------------------------------------------------- */
   const setParticipant = useCallback(
@@ -209,23 +213,125 @@ export default function MeetingRoom({
     [socket, setParticipant],
   );
 
+  // Keep meetingIdRef in sync
+  useEffect(() => {
+    meetingIdRef.current = currentMeetingId;
+  }, [currentMeetingId]);
+
+  /* ---- start recording helper ---------------------------------- */
+  const startRecordingNow = useCallback(() => {
+    if (recorder.current) return; // already recording
+    const ls = localStream.current;
+    if (!ls) { console.warn('No local stream for recording'); return; }
+
+    try {
+      const ctx = new AudioContext();
+      const dest = ctx.createMediaStreamDestination();
+
+      // Mix local audio
+      ls.getAudioTracks().forEach(t => {
+        if (t.readyState === 'live') {
+          ctx.createMediaStreamSource(new MediaStream([t])).connect(dest);
+        }
+      });
+
+      // Mix remote audio from peer connections
+      pcs.current.forEach(pc => {
+        pc.getReceivers().forEach(r => {
+          if (r.track && r.track.kind === 'audio' && r.track.readyState === 'live') {
+            ctx.createMediaStreamSource(new MediaStream([r.track])).connect(dest);
+          }
+        });
+      });
+
+      const combined = new MediaStream([...dest.stream.getTracks()]);
+
+      // Add video track (screen share or camera)
+      const vt = (screenStream.current || ls)?.getVideoTracks().find(t => t.readyState === 'live');
+      if (vt) combined.addTrack(vt);
+
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus'
+        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+          ? 'video/webm;codecs=vp8,opus'
+          : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'audio/webm';
+      recordingMimeRef.current = mime;
+
+      const rec = new MediaRecorder(combined, { mimeType: mime });
+      chunks.current = [];
+      rec.ondataavailable = e => { if (e.data.size) chunks.current.push(e.data); };
+      rec.onstop = async () => {
+        const blob = new Blob(chunks.current, { type: recordingMimeRef.current });
+        const mid = meetingIdRef.current;
+        if (mid && blob.size > 0) {
+          try {
+            const formData = new FormData();
+            formData.append('file', blob, `meeting-${roomId}.webm`);
+            const res = await fetch(`/api/meetings/${mid}/recording`, {
+              method: 'POST',
+              body: formData,
+            });
+            if (res.ok) {
+              console.log('✅ Recording uploaded to server');
+            } else {
+              console.error('Upload failed:', res.status);
+            }
+          } catch (err) {
+            console.error('Failed to upload recording:', err);
+          }
+        }
+      };
+      rec.start(1000);
+      recorder.current = rec;
+      setRecording(true);
+      console.log('🎬 Recording started');
+    } catch (err) {
+      console.error('Recording start failed:', err);
+    }
+  }, [roomId]);
+
   /* ---- socket events -------------------------------------------- */
   useEffect(() => {
     // guard against React StrictMode double-mount
     if (joinedRef.current) return;
     joinedRef.current = true;
 
-    // join
-    socket.emit('join_room', {
-      roomId,
-      userName,
-      audioEnabled: initialAudioEnabled,
-      videoEnabled: initialVideoEnabled,
-    });
+    // Only emit join_room if not already admitted through waiting room
+    if (!skipJoin) {
+      if (!socket.connected) {
+        socket.once('connect', () => {
+          socket.emit('join_room', {
+            roomId,
+            userName,
+            audioEnabled: initialAudioEnabled,
+            videoEnabled: initialVideoEnabled,
+            isHost,
+          });
+        });
+      } else {
+        socket.emit('join_room', {
+          roomId,
+          userName,
+          audioEnabled: initialAudioEnabled,
+          videoEnabled: initialVideoEnabled,
+          isHost,
+        });
+      }
+    } else {
+      // Already admitted via waiting room - start recording immediately
+      if (meetingId) {
+        meetingIdRef.current = meetingId;
+        setCurrentMeetingId(meetingId);
+      }
+      setTimeout(() => startRecordingNow(), 2000);
+    }
 
     socket.on('room_joined', async ({ participants: existing, chatHistory, meetingId: mid, isHost: hostFlag, hostSid }: any) => {
       setChatMsgs(chatHistory || []);
-      if (mid) setCurrentMeetingId(mid);
+      if (mid) {
+        setCurrentMeetingId(mid);
+        meetingIdRef.current = mid;
+      }
       if (hostFlag) setAmHost(true);
       for (const [sid, info] of Object.entries<any>(existing)) {
         setParticipant(sid, () => ({
@@ -245,6 +351,9 @@ export default function MeetingRoom({
           console.error('offer error', err);
         }
       }
+
+      // ── Auto-start recording after a short delay ──
+      setTimeout(() => startRecordingNow(), 2000);
     });
 
     socket.on('participant_joined', ({ sid, name, audioEnabled: a, videoEnabled: v }: any) => {
@@ -358,7 +467,7 @@ export default function MeetingRoom({
         'waiting_room_update',
       ].forEach(e => socket.off(e));
     };
-  }, [socket, roomId, userName, initialAudioEnabled, initialVideoEnabled, createPC, setParticipant]);
+  }, [socket, roomId, userName, initialAudioEnabled, initialVideoEnabled, createPC, setParticipant, startRecordingNow, skipJoin, isHost, meetingId]);
 
   /* ---- clear unread when chat open ------------------------------ */
   useEffect(() => { if (sidePanel === 'chat') setUnread(0); }, [sidePanel, chatMsgs]);
@@ -500,71 +609,10 @@ export default function MeetingRoom({
   const toggleRecording = () => {
     if (recording) {
       recorder.current?.stop();
+      recorder.current = null;
       setRecording(false);
     } else {
-      try {
-        const ctx = new AudioContext();
-        const dest = ctx.createMediaStreamDestination();
-        const streams: MediaStream[] = [localStream.current!].filter(Boolean);
-        pcs.current.forEach(pc =>
-          pc.getReceivers().forEach(r => {
-            if (r.track) {
-              const ms = new MediaStream([r.track]);
-              streams.push(ms);
-            }
-          }),
-        );
-        streams.forEach(s =>
-          s.getAudioTracks().forEach(t => {
-            ctx.createMediaStreamSource(new MediaStream([t])).connect(dest);
-          }),
-        );
-        const combined = new MediaStream([...dest.stream.getTracks()]);
-        const vt = (screenStream.current || localStream.current)?.getVideoTracks()[0];
-        if (vt) combined.addTrack(vt);
-        const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-          ? 'video/webm;codecs=vp9,opus'
-          : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'audio/webm';
-        const rec = new MediaRecorder(combined, { mimeType: mime });
-        chunks.current = [];
-        rec.ondataavailable = e => { if (e.data.size) chunks.current.push(e.data); };
-        rec.onstop = async () => {
-          const blob = new Blob(chunks.current, { type: mime });
-          // Upload recording to server
-          if (currentMeetingId) {
-            try {
-              const formData = new FormData();
-              const ext = mime.startsWith('video') ? 'webm' : 'webm';
-              formData.append('file', blob, `meeting-${roomId}.${ext}`);
-              await fetch(`/api/meetings/${currentMeetingId}/recording`, {
-                method: 'POST',
-                body: formData,
-              });
-              console.log('Recording uploaded to server');
-            } catch (err) {
-              console.error('Failed to upload recording, downloading locally instead', err);
-              // Fallback: download locally
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `meeting-${roomId}-${new Date().toISOString().slice(0, 10)}.webm`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }
-          } else {
-            // No meeting ID, just download locally
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `meeting-${roomId}-${new Date().toISOString().slice(0, 10)}.webm`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }
-        };
-        rec.start(1000);
-        recorder.current = rec;
-        setRecording(true);
-      } catch (err) { console.error('recording err', err); }
+      startRecordingNow();
     }
   };
 
@@ -572,24 +620,33 @@ export default function MeetingRoom({
   const leave = async () => {
     recognition.current?.stop();
 
-    // If recording, stop and wait for upload to finish before leaving
-    if (recording && recorder.current && recorder.current.state !== 'inactive') {
+    // Stop recording and wait for upload to complete before ending
+    if (recorder.current && recorder.current.state !== 'inactive') {
       await new Promise<void>((resolve) => {
-        const origOnStop = recorder.current!.onstop as (() => void) | null;
+        const origOnStop = recorder.current!.onstop;
         recorder.current!.onstop = async (ev: Event) => {
           // Run the original onstop (which uploads the recording)
           if (origOnStop) {
-            await (origOnStop as any).call(recorder.current, ev);
+            try {
+              await (origOnStop as any).call(recorder.current, ev);
+            } catch (e) {
+              console.error('Recording upload error:', e);
+            }
           }
           resolve();
         };
         recorder.current!.stop();
       });
+      recorder.current = null;
       setRecording(false);
     }
 
-    // Trigger AI processing on the server
+    // Trigger AI processing on the server (after recording is saved)
     socket.emit('end_meeting', { roomId });
+
+    // Small delay to let end_meeting reach server before disconnecting
+    await new Promise(r => setTimeout(r, 500));
+
     localStream.current?.getTracks().forEach(t => t.stop());
     screenStream.current?.getTracks().forEach(t => t.stop());
     pcs.current.forEach(pc => pc.close());
@@ -686,6 +743,7 @@ export default function MeetingRoom({
           </button>
         </div>
         <div className="meeting-clock">
+          {recording && <span className="recording-indicator">🔴 REC</span>}
           {fmt(elapsed)}&nbsp;&middot;&nbsp;{total} participant{total !== 1 ? 's' : ''}
           {amHost && waitingCount > 0 && (
             <span className="waiting-badge" onClick={() => setSidePanel(sidePanel === 'waiting' ? 'none' : 'waiting')}>

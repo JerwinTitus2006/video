@@ -41,6 +41,10 @@ from database.models import (
 from sqlalchemy import select, func
 from services.sarvam_ai import sarvam_service
 from services.ai_processor import ai_processor, check_for_pain_points_realtime
+from database.mongo_db import (
+    init_mongodb, save_recording, get_recording, delete_recording,
+    save_meeting_metadata, list_recordings,
+)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -442,16 +446,37 @@ async def get_sentiment(meeting_id: str):
 
 @app.post("/api/meetings/{meeting_id}/recording")
 async def upload_recording(meeting_id: str, file: UploadFile = File(...)):
-    """Upload a meeting recording (webm/mp4). Stored on disk, filename saved in DB."""
+    """Upload a meeting recording (webm/mp4). Stored in MongoDB GridFS."""
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "webm"
     filename = f"{meeting_id}.{ext}"
-    filepath = RECORDINGS_DIR / filename
+    content_type = file.content_type or ("video/webm" if ext == "webm" else "video/mp4")
 
     contents = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(contents)
 
-    # Save filename in DB
+    # Look up room_code from the in-memory rooms or DB
+    room_code = ""
+    for rid, room in rooms.items():
+        if room.get("meeting_id") == meeting_id:
+            room_code = rid
+            break
+
+    # Store in MongoDB GridFS
+    file_id = await save_recording(
+        meeting_id=meeting_id,
+        room_code=room_code,
+        file_data=contents,
+        filename=filename,
+        content_type=content_type,
+    )
+
+    if not file_id:
+        # Fallback: save to disk if MongoDB fails
+        filepath = RECORDINGS_DIR / filename
+        with open(filepath, "wb") as f:
+            f.write(contents)
+        logger.warning("MongoDB save failed – saved to disk: %s", filename)
+
+    # Also update SQLite so the has_recording flag works
     async with async_session_maker() as db:
         try:
             meeting = await db.get(Meeting, meeting_id)
@@ -461,26 +486,50 @@ async def upload_recording(meeting_id: str, file: UploadFile = File(...)):
         except Exception as exc:
             logger.error("DB recording save error: %s", exc)
 
-    logger.info("📼 Recording saved: %s (%d KB)", filename, len(contents) // 1024)
-    return {"status": "ok", "filename": filename, "size": len(contents)}
+    logger.info("📼 Recording saved to MongoDB: %s (%d KB)", filename, len(contents) // 1024)
+    return {"status": "ok", "filename": filename, "size": len(contents), "mongo_file_id": file_id}
 
 
 @app.get("/api/meetings/{meeting_id}/recording")
 async def download_recording(meeting_id: str):
-    """Download / stream a meeting recording."""
+    """Download / stream a meeting recording from MongoDB GridFS."""
+    from fastapi.responses import Response
+    from fastapi import HTTPException
+
+    # Try MongoDB first
+    rec = await get_recording(meeting_id)
+    if rec:
+        return Response(
+            content=rec["data"],
+            media_type=rec["content_type"],
+            headers={
+                "Content-Disposition": f'inline; filename="{rec["filename"]}"',
+                "Content-Length": str(rec["size"]),
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    # Fallback: check disk
     async with async_session_maker() as db:
         meeting = await db.get(Meeting, meeting_id)
         if not meeting or not meeting.recording_filename:
-            return {"error": "No recording available"}
+            raise HTTPException(status_code=404, detail="No recording available")
         filepath = RECORDINGS_DIR / meeting.recording_filename
         if not filepath.exists():
-            return {"error": "Recording file not found"}
+            raise HTTPException(status_code=404, detail="Recording file not found")
         media_type = "video/webm" if meeting.recording_filename.endswith(".webm") else "video/mp4"
         return FileResponse(
             str(filepath),
             media_type=media_type,
             filename=meeting.recording_filename,
         )
+
+
+@app.get("/api/recordings")
+async def api_list_recordings():
+    """List all recordings stored in MongoDB."""
+    recs = await list_recordings()
+    return {"recordings": recs}
 
 
 # ── Email invitation endpoint ─────────────────────────────────────────────
@@ -1220,6 +1269,13 @@ async def startup():
     logger.info("🚀 Starting AI Call Intelligence Platform")
     await init_db()
     logger.info("✅ SQLite database ready")
+
+    # Initialise MongoDB for recordings
+    mongo_ok = await init_mongodb()
+    if mongo_ok:
+        logger.info("✅ MongoDB connected – recordings will be stored in GridFS")
+    else:
+        logger.warning("⚠️ MongoDB not available – recordings will be saved to disk as fallback")
 
     # Clean up stale meetings from previous runs
     async with async_session_maker() as db:

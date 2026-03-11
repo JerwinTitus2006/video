@@ -149,6 +149,14 @@
 .meeting-code:hover { background:#3c4043; }
 .meeting-clock { font-size:.85rem;color:#9aa0a6; }
 
+/* recording indicator */
+.recording-indicator {
+  display:inline-flex;align-items:center;gap:4px;
+  color:#ea4335;font-weight:600;font-size:.8rem;
+  animation:rec-blink 1.2s infinite;margin-right:6px;
+}
+@keyframes rec-blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
 /* body */
 .meeting-body { flex:1;display:flex;overflow:hidden;position:relative; }
 

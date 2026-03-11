@@ -43,6 +43,7 @@ function App() {
   // Waiting room state
   const [waitingMessage, setWaitingMessage] = useState('Waiting for the host to let you in...');
   const [denied, setDenied] = useState(false);
+  const [alreadyAdmitted, setAlreadyAdmitted] = useState(false);
 
   const previewVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -336,8 +337,10 @@ function App() {
       sock.on('waiting_room', ({ message }: any) => {
         setWaitingMessage(message || 'Waiting for the host to let you in...');
       });
-      sock.on('room_joined', () => {
+      sock.on('room_joined', ({ meetingId: mid }: any) => {
         // We got admitted! Move to meeting
+        setAlreadyAdmitted(true);
+        if (mid) setMeetingId(mid);
         setPage('meeting');
       });
       sock.on('denied', ({ message }: any) => {
@@ -357,13 +360,7 @@ function App() {
       window.history.pushState({}, '', `?room=${roomId}`);
     } else {
       // Direct join (host or no admission required)
-      sock.emit('join_room', {
-        roomId: roomId,
-        userName: userName,
-        audioEnabled,
-        videoEnabled,
-        isHost,
-      });
+      // Don't emit join_room here – MeetingRoom will handle it
       setPage('meeting');
       window.history.pushState({}, '', `?room=${roomId}`);
     }
@@ -374,6 +371,7 @@ function App() {
     setLocalStream(null);
     socket?.disconnect();
     setSocket(null);
+    setAlreadyAdmitted(false);
     window.history.pushState({}, '', window.location.pathname);
     const mid = returnedMeetingId || meetingId;
     if (mid) {
@@ -399,6 +397,7 @@ function App() {
     setIsHost(false);
     setCreatedRoomCode('');
     setDenied(false);
+    setAlreadyAdmitted(false);
     window.history.pushState({}, '', window.location.pathname);
   };
 
@@ -445,6 +444,7 @@ function App() {
         initialAudioEnabled={audioEnabled}
         initialVideoEnabled={videoEnabled}
         initialStream={localStream}
+        skipJoin={alreadyAdmitted}
         onLeave={handleLeave}
       />
     );
